@@ -14,6 +14,8 @@ class ApplicantWebfile(BaseModel):
     full_name: Optional[str] = Field(default=None, description="Applicant full name")
     passport_number: Optional[str] = None
     date_of_birth: Optional[date] = None
+    passport_issue_date: Optional[date] = None
+    passport_expiry_date: Optional[date] = None
     nationality: Optional[str] = None
     gender: Optional[str] = None
     webfile_number: Optional[str] = None

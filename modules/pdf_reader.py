@@ -1,7 +1,7 @@
 """Local PDF validation and page-by-page text extraction."""
 
 from dataclasses import dataclass
-from typing import BinaryIO
+from typing import BinaryIO, Optional
 
 import fitz
 
@@ -17,6 +17,21 @@ class PDFReadError(ValueError):
 class PDFPage:
     page_number: int
     text: str
+    ocr_text: Optional[str] = None
+    ocr_confidence: Optional[float] = None
+
+    @property
+    def text_for_review(self) -> str:
+        """Keep native text authoritative; OCR fills only pages without native text."""
+        return self.text if self.text.strip() else (self.ocr_text or "")
+
+    @property
+    def extraction_method(self) -> str:
+        if self.text.strip():
+            return "Selectable text"
+        if self.ocr_text and self.ocr_text.strip():
+            return "OCR (local Tesseract)"
+        return "Not detected"
 
 
 @dataclass(frozen=True)
@@ -30,6 +45,11 @@ class PDFExtraction:
     @property
     def has_text(self) -> bool:
         return bool(self.full_text.strip())
+
+    @property
+    def has_review_text(self) -> bool:
+        """Return true for either native text or separately retained OCR text."""
+        return any(page.text_for_review.strip() for page in self.pages)
 
     @property
     def pages_without_text(self) -> tuple[int, ...]:
@@ -60,7 +80,9 @@ def extract_pdf(upload: BinaryIO, filename: str, max_bytes: int = MAX_PDF_BYTES)
                 raise PDFReadError("This PDF is password-protected. Unlock it yourself and upload the permitted readable copy; this app will not request or store its password.")
             if document.page_count == 0:
                 raise PDFReadError("The PDF has no pages. Please choose a complete application PDF.")
-            pages = tuple(PDFPage(index + 1, page.get_text("text").strip()) for index, page in enumerate(document))
+            if document.page_count > 300:
+                raise PDFReadError("The PDF has more than 300 pages. Split it into smaller documents before upload.")
+            pages = tuple(PDFPage(index + 1, page.get_text("text", sort=True).strip()) for index, page in enumerate(document))
     except PDFReadError:
         raise
     except Exception as exc:

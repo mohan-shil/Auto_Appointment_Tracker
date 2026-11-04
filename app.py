@@ -1,13 +1,16 @@
 """Local Streamlit dashboard for IVAC Webfile preparation and review."""
 
 from datetime import date
+import hashlib
 
 import streamlit as st
 from dotenv import load_dotenv
 
 from config.readiness import MAX_APPLICANTS, OFFICIAL_FAQ_URL, webfile_age_status
 from models.applicant import ManualConfirmations
+from modules.data_export import serialize_reviewed_applicants
 from modules.data_validator import extract_fields, validate_account_profile, validate_applicant
+from modules.ocr_reader import OCRProcessingError, OCRUnavailable, apply_ocr_results, get_ocr_languages, get_ocr_status, run_local_ocr
 from modules.pdf_reader import PDFReadError, extract_pdf
 
 load_dotenv()
@@ -27,12 +30,18 @@ all_webfiles_recent = True
 all_webfiles_uploaded = True
 any_uploaded_webfile = False
 primary_webfile_ready = False
+reviewed_applicants = []
+reviewed_field_count = 0
+reviewable_field_count = 0
 
 for index in range(int(applicant_count)):
     role = "Primary applicant" if index == 0 else f"Secondary applicant {index}"
     with st.expander(role, expanded=index == 0):
         upload = st.file_uploader(f"Upload {role.lower()} Webfile (PDF)", type=["pdf"], key=f"webfile_{index}", help="PDF only; maximum 15 MB. Files are not saved to disk.")
+        if upload is None:
+            st.session_state.pop(f"ocr_results_{index}", None)
         webfile_ok = False
+        field_review_complete = False
         if upload is not None:
             any_uploaded_webfile = True
             if upload.size > 15 * 1024 * 1024:
@@ -46,42 +55,122 @@ for index in range(int(applicant_count)):
                 except Exception:
                     st.error("The file could not be processed. Please choose the PDF again.")
                 else:
-                    if not extraction.has_text:
-                        st.warning("No selectable text found; this may be a scanned PDF. Check the original manually.")
+                    fingerprint = hashlib.sha256(upload.getvalue()).hexdigest()
+                    ocr_cache_key = f"ocr_results_{index}"
+                    cached_ocr = st.session_state.get(ocr_cache_key)
+                    if cached_ocr and cached_ocr.get("fingerprint") == fingerprint:
+                        extraction = apply_ocr_results(extraction, cached_ocr.get("pages", {}))
+                    elif cached_ocr:
+                        del st.session_state[ocr_cache_key]
+
+                    pages_needing_ocr = tuple(page.page_number for page in extraction.pages if not page.text.strip() and not (page.ocr_text or "").strip())
+                    if pages_needing_ocr:
+                        ocr_ready, ocr_message = get_ocr_status()
+                        st.warning("This PDF has page(s) without selectable text (" + ", ".join(map(str, pages_needing_ocr)) + "). Optional OCR runs locally and will be kept separate from original PDF text.")
+                        if not ocr_ready:
+                            st.info(ocr_message)
+                        else:
+                            languages = get_ocr_languages()
+                            if languages:
+                                default_languages = ["eng"] if "eng" in languages else [languages[0]]
+                                selected_languages = st.multiselect("Optional local OCR language(s)", languages, default=default_languages, key=f"ocr_language_{index}")
+                                if st.button("Run local OCR on pages without text", key=f"run_ocr_{index}"):
+                                    if not selected_languages:
+                                        st.warning("Select at least one installed Tesseract language.")
+                                    else:
+                                        try:
+                                            with st.spinner("Reading scanned pages locally…"):
+                                                extraction = run_local_ocr(upload, extraction, language="+".join(selected_languages))
+                                            page_results = {
+                                                page.page_number: (page.ocr_text or "", page.ocr_confidence)
+                                                for page in extraction.pages if page.ocr_text is not None
+                                            }
+                                            st.session_state[ocr_cache_key] = {"fingerprint": fingerprint, "pages": page_results}
+                                        except (OCRUnavailable, OCRProcessingError) as exc:
+                                            st.error(str(exc))
+                            else:
+                                st.info("Tesseract is installed, but it has no usable language models. Install language data and restart Streamlit.")
+
+                    if not extraction.has_review_text:
+                        st.warning("No selectable or OCR text was found. Review the original manually.")
                     else:
-                        st.success(f"Read selectable text on {len(extraction.pages)} page(s).")
-                        if extraction.pages_without_text:
-                            page_list = ", ".join(map(str, extraction.pages_without_text))
-                            st.warning(f"No selectable text was found on page(s) {page_list}; these may be scanned pages. Review them manually.")
+                        native_page_count = sum(1 for page in extraction.pages if page.text.strip())
+                        ocr_page_count = sum(1 for page in extraction.pages if not page.text.strip() and (page.ocr_text or "").strip())
+                        st.success(f"Read text from {native_page_count} page(s) using selectable text and {ocr_page_count} page(s) using OCR.")
+                        if any(not page.text.strip() and not (page.ocr_text or "").strip() for page in extraction.pages):
+                            st.warning("Some pages still have no text. Review those pages manually.")
                         with st.expander("Show page-by-page extracted text"):
                             for page in extraction.pages:
                                 st.markdown(f"**Page {page.page_number}**")
-                                st.text(page.text or "No selectable text on this page.")
-                        fields = extract_fields(extraction)
-                        form_values = {}
-                        field_sources = {}
-                        for field in fields:
-                            label = field.label
-                            if field.source_pages:
-                                label += " · page(s) " + ", ".join(map(str, field.source_pages))
-                            if field.status.startswith("Ambiguous") or field.status.startswith("Duplicate"):
-                                st.warning(f"{field.label}: {field.status}. Found: {field.value}")
+                                if page.text.strip():
+                                    st.caption("Original selectable PDF text")
+                                    st.text(page.text)
+                                elif page.ocr_text is not None:
+                                    st.caption("OCR output (local Tesseract; original PDF text unchanged)")
+                                    st.text(page.ocr_text or "OCR found no text.")
+                                else:
+                                    st.text("No selectable text on this page.")
+
+                    # Always show a review card, including when a page is scanned
+                    # and optional OCR is unavailable, so manual entry remains possible.
+                    fields = extract_fields(extraction)
+                    form_values = {}
+                    confirmed_fields = []
+                    for field in fields:
+                        with st.container(border=True):
+                            st.markdown(f"**{field.label}**")
+                            st.caption(f"Method: {field.extraction_method} · Heuristic confidence: {field.confidence} · {field.status}")
+                            if field.source_references:
+                                for reference in field.source_references:
+                                    st.caption(f"Source page {reference.page_number} · {reference.extraction_method} · confidence {reference.confidence}")
+                                    st.code(reference.source_text, language=None)
+                            else:
+                                st.warning("Not detected in the configured labels. Review the original PDF manually.")
+                            if field.status.startswith(("Ambiguous", "Conflicting", "Duplicate")):
+                                st.warning("Multiple or repeated values need your review. Check each source reference before choosing.")
                             initial = field.value or ""
-                            if field.status.startswith(("Ambiguous", "Duplicate")):
+                            if field.status.startswith(("Ambiguous", "Conflicting", "Duplicate")):
                                 initial = ""
-                            form_values[field.key] = st.text_input(label, value=initial, key=f"applicant_{index}_{field.key}", placeholder="Needs review" if not initial else "")
-                            field_sources[field.key] = field.source_pages or ((field.source_page,) if field.source_page else ())
-                        applicant_model, validation_errors = validate_applicant(form_values)
-                        webfile_ok = extraction.has_text and applicant_model is not None and not validation_errors
-                        if validation_errors:
-                            for error in validation_errors:
-                                st.warning(error)
-                        if not extraction.has_text:
-                            st.info("Field extraction is unavailable. A person must inspect the original PDF.")
-                        elif not fields or all(field.value is None for field in fields):
-                            st.warning("No configured labels were recognized. Review the Webfile manually.")
-                        else:
-                            st.caption("Recognized values still require comparison with the original Webfile.")
+                            form_values[field.key] = st.text_input("Reviewed value", value=initial, key=f"applicant_{index}_{field.key}", placeholder="Needs review" if not initial else "")
+                            confirmed = st.checkbox("I verified this value against the original Webfile", key=f"confirm_{index}_{field.key}")
+                            st.caption("Applicant verification: " + ("Confirmed by applicant" if confirmed else "Needs verification"))
+                            manual_page = 0
+                            if not field.source_references or field.status.startswith(("Ambiguous", "Conflicting", "Duplicate")):
+                                manual_page = st.number_input(
+                                    "Source page for manually entered/resolved value (0 = not recorded)",
+                                    min_value=0,
+                                    max_value=len(extraction.pages),
+                                    value=field.source_page or 0,
+                                    step=1,
+                                    key=f"manual_page_{index}_{field.key}",
+                                )
+                            if form_values[field.key]:
+                                reviewable_field_count += 1
+                                if confirmed:
+                                    reviewed_field_count += 1
+                            confirmed_fields.append({
+                                "key": field.key,
+                                "label": field.label,
+                                "value": form_values[field.key],
+                                "source_pages": list(field.source_pages) if field.source_pages else ([int(manual_page)] if manual_page else []),
+                                "extraction_method": field.extraction_method if field.value else ("Manual entry" if form_values[field.key] else "Not detected"),
+                                "confidence": field.confidence,
+                                "verification_status": "Confirmed by applicant" if confirmed else "Needs verification",
+                            })
+                    populated_fields = [item for item in confirmed_fields if item["value"]]
+                    field_review_complete = bool(populated_fields) and all(item["verification_status"] == "Confirmed by applicant" for item in populated_fields)
+                    applicant_model, validation_errors = validate_applicant(form_values)
+                    has_extracted_identity = any(field.value for field in fields)
+                    webfile_ok = (has_extracted_identity or field_review_complete) and applicant_model is not None and not validation_errors
+                    for error in validation_errors:
+                        st.warning(error)
+                    if not fields or all(field.value is None for field in fields):
+                        st.warning("No configured labels were recognized. Review the Webfile manually.")
+                    st.caption("Read all displayed text as a proposed extraction; confirm every identity value yourself.")
+                    populated_count = sum(1 for item in confirmed_fields if item["value"])
+                    confirmed_count = sum(1 for item in confirmed_fields if item["value"] and item["verification_status"] == "Confirmed by applicant")
+                    st.progress(confirmed_count / max(populated_count, 1), text=f"{confirmed_count} of {populated_count} populated fields verified")
+                    reviewed_applicants.append({"applicant": role, "fields": confirmed_fields})
 
         webfile_date = st.date_input(f"Date printed on {role.lower()} Webfile (read it from the document)", value=None, key=f"webfile_date_{index}", max_value=date.today())
         age_ok = False
@@ -95,10 +184,16 @@ for index in range(int(applicant_count)):
             all_webfiles_uploaded = False
         if index == 0:
             primary_webfile_ready = bool(upload and webfile_ok)
-        applicant_records.append({"Applicant": role, "Webfile": "Uploaded" if upload and webfile_ok else ("Needs review" if upload else "Not uploaded"), "Age check": "Within 30 days" if age_ok else "Needs review", "Status": "Ready for review" if upload and webfile_ok and age_ok else "Needs review"})
+        applicant_records.append({
+            "Applicant": role,
+            "Webfile": "Uploaded" if upload else "Not uploaded",
+            "Age check": "Within 30 days" if age_ok else "Needs review",
+            "Status": "Fields verified" if upload and webfile_ok and field_review_complete and age_ok else ("Needs review" if upload else "Not started"),
+        })
 
 st.subheader("Applicant list")
 st.dataframe(applicant_records, hide_index=True, width="stretch")
+st.progress(reviewed_field_count / max(reviewable_field_count, 1), text=f"Document review progress: {reviewed_field_count} of {reviewable_field_count} populated fields verified")
 if applicant_count > MAX_APPLICANTS:
     st.error("IVAC FAQ limits one account to four applicants.")
 elif not any_uploaded_webfile:
@@ -129,6 +224,18 @@ with st.expander("Review account profile fields", expanded=False):
     st.caption("Profile requirements and matching rules are based on the linked FAQ. This tool does not log in or modify your account.")
 profile_ready = not missing_profile and not profile_errors
 st.caption(f"Account profile information: {len(profile_required) - len(missing_profile)} of {len(profile_required)} fields entered" + ("; format review needed." if profile_errors else "."))
+profile_confirmed = st.checkbox("I reviewed the account-profile information against the primary Webfile", key="profile_confirmed")
+profile_for_export = {"confirmed": profile_confirmed, "values": profile_values}
+try:
+    current_export_data = serialize_reviewed_applicants(reviewed_applicants, profile_for_export)
+    current_export_signature = hashlib.sha256(current_export_data).hexdigest()
+except ValueError:
+    current_export_data = None
+    current_export_signature = None
+saved_export_signature = st.session_state.get("review_export_signature")
+if saved_export_signature and saved_export_signature != current_export_signature:
+    st.session_state.pop("review_export_json", None)
+    st.session_state.pop("review_export_signature", None)
 
 st.subheader("Booking preparation checklist")
 st.caption("Manually mark each item after you have completed it. A checked item is your confirmation, not a website status or a guarantee of slot availability.")
@@ -171,6 +278,27 @@ if completed_count == len(checklist) and not all_webfiles_uploaded:
     st.warning("Checklist is complete, but each listed applicant still needs a readable Webfile before applicant readiness can be shown.")
 if st.session_state.get("check_webfile_age") and not all_webfiles_recent:
     st.warning("Checklist says the age check is complete, but one or more dates are missing or outside the 30-day limit.")
+
+with st.expander("Optional JSON export of reviewed information"):
+    st.warning("Sensitive personal information may be included. The export excludes original PDF content and is created only after your explicit confirmation.")
+    export_confirmed = st.checkbox("I understand this download contains sensitive applicant data", key="export_confirmed")
+    if st.button("Prepare reviewed applicant JSON", key="prepare_json_export"):
+        if not export_confirmed:
+            st.error("Confirm the sensitive-data warning before preparing an export.")
+        else:
+            try:
+                st.session_state["review_export_json"] = serialize_reviewed_applicants(reviewed_applicants, profile_for_export)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.session_state["review_export_signature"] = current_export_signature
+    if st.session_state.get("review_export_json") and export_confirmed:
+        st.download_button(
+            "Download reviewed applicant JSON",
+            data=st.session_state["review_export_json"],
+            file_name="reviewed_applicant_information.json",
+            mime="application/json",
+        )
 
 st.markdown(f"FAQ reference: [{OFFICIAL_FAQ_URL}]({OFFICIAL_FAQ_URL})")
 st.warning("Applicants should carry out sign-up and booking themselves. Never share your password or OTP. This tool does not automate authentication, CAPTCHA, form submission, appointment polling/reservation, or payment.")

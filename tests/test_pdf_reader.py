@@ -39,6 +39,20 @@ def test_rejects_over_limit():
         extract_pdf(io.BytesIO(make_pdf("text")), "large.pdf", max_bytes=5)
 
 
+def test_oversized_read_is_bounded_to_limit_plus_one_byte():
+    class ReadSpy:
+        requested_size = None
+
+        def read(self, size):
+            self.requested_size = size
+            return b"x" * size
+
+    upload = ReadSpy()
+    with pytest.raises(PDFReadError, match="too large"):
+        extract_pdf(upload, "large.pdf", max_bytes=128)
+    assert upload.requested_size == 129
+
+
 def test_rejects_empty_upload():
     with pytest.raises(PDFReadError, match="empty"):
         extract_pdf(io.BytesIO(b""), "empty.pdf")

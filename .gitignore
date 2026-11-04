@@ -13,6 +13,8 @@ secrets/
 .streamlit/secrets.toml
 uploads/
 extracted_data/
+reviewed_applicant_information.json
+*.applicant.json
 **/__pycache__/
 *.pyc
 .DS_Store
