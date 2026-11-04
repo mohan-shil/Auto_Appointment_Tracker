@@ -1,4 +1,4 @@
-# Auto Appointment Tracker
+# Auto_Appointment_Tracker — Auto Appointment Tracker
 
 A local applicant-assistance tool for reviewing IVAC Webfiles and preparing for the official appointment process. It does not log in, solve CAPTCHA, handle OTP, submit forms, poll for slots, reserve appointments, or make payments. Applicants must perform every IVAC website action themselves.
 
