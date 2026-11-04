@@ -1,5 +1,7 @@
 """Local Webfile manager and manual IVAC browser assistant."""
 
+import sys
+
 import streamlit as st
 
 from modules.browser import BrowserLaunchError, BrowserSession, open_official_site
@@ -73,8 +75,35 @@ for slot, applicant_label in enumerate(APPLICANT_LABELS):
 
         saved = document_store.documents.get(slot)
         if saved:
-            st.text(f"File: {saved.original_name}")
-            st.caption(f"Size: {saved.size_bytes / (1024 * 1024):.2f} MB · Status: Ready in temporary local storage")
+            file_available = saved.path.is_file()
+            st.text(f"Original filename: {saved.original_name}")
+            storage_status = "Available in temporary local storage" if file_available else "Missing from temporary local storage"
+            st.caption(f"Size: {saved.size_bytes / (1024 * 1024):.2f} MB · Status: {storage_status}")
+            st.caption("Saved file path:")
+            st.code(str(saved.path), language=None)
+            reveal_label = None
+            if not file_available:
+                st.error("The saved PDF is missing. Upload it again before continuing.")
+            elif sys.platform == "darwin":
+                st.info("To upload this saved copy in Chromium, open the IVAC file picker and use Command + Shift + G, then enter the displayed file path. Select the correct PDF and complete the upload yourself.")
+                reveal_label = "Reveal PDF in Finder"
+            elif sys.platform == "win32":
+                st.info("To upload this saved copy in Chromium, open the IVAC file picker, navigate to the displayed file path, and select the correct PDF yourself.")
+                reveal_label = "Show PDF in Explorer"
+            elif sys.platform.startswith("linux"):
+                st.info("To upload this saved copy in Chromium, open the IVAC file picker, navigate to the displayed file path, and select the correct PDF yourself.")
+                reveal_label = "Open Containing Folder"
+            else:
+                st.info("To upload this saved copy in Chromium, use the displayed path in the IVAC file picker and select the correct PDF yourself.")
+                reveal_label = None
+                st.caption("Automatic file reveal is not supported on this operating system.")
+            if reveal_label and st.button(reveal_label, key=f"reveal_pdf_{slot}"):
+                try:
+                    reveal_message = document_store.reveal(slot)
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success(reveal_message)
         elif slot == 0:
             st.warning("Primary Webfile required before opening the IVAC website.")
         else:

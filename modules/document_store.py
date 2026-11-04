@@ -6,7 +6,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
+import subprocess
 import tempfile
 import time
 from typing import Dict, Optional
@@ -209,6 +211,37 @@ class LocalDocumentStore:
             raise DocumentStoreError("Could not remove the selected PDF from temporary storage.") from exc
         self.documents.pop(slot, None)
         return True
+
+    def reveal(self, slot: int, system: Optional[str] = None) -> str:
+        """Open the saved file's location using a fixed OS command and stored path."""
+        document = self.documents.get(slot)
+        if document is None:
+            raise DocumentStoreError("No saved PDF is available for this applicant.")
+        if not document.path.is_file():
+            raise DocumentStoreError("The saved PDF is no longer available. Upload it again before continuing.")
+
+        operating_system = system or platform.system()
+        if operating_system == "Darwin":
+            command = ["open", "-R", str(document.path)]
+            success_message = "Revealed the saved PDF in Finder."
+        elif operating_system == "Windows":
+            command = ["explorer", "/select," + str(document.path)]
+            success_message = "Opened File Explorer with the saved PDF selected."
+        elif operating_system == "Linux":
+            command = ["xdg-open", str(document.path.parent)]
+            success_message = "Opened the folder containing the saved PDF."
+        else:
+            raise DocumentStoreError("Opening the saved file location is not supported on this operating system. Use the displayed path.")
+
+        try:
+            subprocess.run(command, check=True, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except FileNotFoundError as exc:
+            raise DocumentStoreError("The system file browser could not be started. Use the displayed path instead.") from exc
+        except subprocess.CalledProcessError as exc:
+            raise DocumentStoreError("The system file browser could not reveal the saved PDF. Use the displayed path instead.") from exc
+        except OSError as exc:
+            raise DocumentStoreError("The system file browser could not reveal the saved PDF. Use the displayed path instead.") from exc
+        return success_message
 
     def clear_all(self) -> int:
         """Unlink every stored PDF while retaining this session for future uploads."""

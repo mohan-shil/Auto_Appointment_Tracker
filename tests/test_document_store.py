@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 
 import pytest
 
@@ -72,6 +73,91 @@ def test_replacing_and_removing_a_pdf_cleans_the_previous_copy(tmp_path):
     assert not replacement.path.exists()
     assert not store.remove(0)
     store.close()
+
+
+def test_reveal_in_finder_uses_only_the_saved_path_and_never_a_shell(monkeypatch, tmp_path):
+    import modules.document_store as document_store_module
+
+    store = LocalDocumentStore(cache_root=tmp_path / "cache")
+    saved = store.save(0, "fictional ; touch unexpected.pdf", pdf_bytes())
+    calls = []
+    monkeypatch.setattr(document_store_module.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs)))
+
+    message = store.reveal(0, system="Darwin")
+
+    assert calls == [(
+        ["open", "-R", str(saved.path)],
+        {"check": True, "shell": False, "stdout": document_store_module.subprocess.DEVNULL, "stderr": document_store_module.subprocess.DEVNULL},
+    )]
+    assert message == "Revealed the saved PDF in Finder."
+    store.close()
+
+
+@pytest.mark.parametrize(
+    "system,expected_command",
+    [
+        ("Windows", "explorer"),
+        ("Linux", "xdg-open"),
+    ],
+)
+def test_reveal_supports_windows_and_linux_file_browsers(monkeypatch, tmp_path, system, expected_command):
+    import modules.document_store as document_store_module
+
+    store = LocalDocumentStore(cache_root=tmp_path / "cache")
+    saved = store.save(0, "fictional.pdf", pdf_bytes())
+    calls = []
+    monkeypatch.setattr(document_store_module.subprocess, "run", lambda command, **kwargs: calls.append(command))
+    store.reveal(0, system=system)
+    assert calls[0][0] == expected_command
+    assert str(saved.path if system == "Windows" else saved.path.parent) in calls[0][-1]
+    store.close()
+
+
+def test_reveal_handles_missing_saved_file_without_launching_subprocess(monkeypatch, tmp_path):
+    import modules.document_store as document_store_module
+
+    store = LocalDocumentStore(cache_root=tmp_path / "cache")
+    saved = store.save(0, "fictional.pdf", pdf_bytes())
+    saved.path.unlink()
+    calls = []
+    monkeypatch.setattr(document_store_module.subprocess, "run", lambda *args, **kwargs: calls.append(args))
+    with pytest.raises(ValueError, match="no longer available"):
+        store.reveal(0, system="Darwin")
+    assert not calls
+    store.close()
+
+
+def test_reveal_reports_missing_platform_file_browser(monkeypatch, tmp_path):
+    import modules.document_store as document_store_module
+
+    store = LocalDocumentStore(cache_root=tmp_path / "cache")
+    store.save(0, "fictional.pdf", pdf_bytes())
+    monkeypatch.setattr(document_store_module.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError()))
+    with pytest.raises(ValueError, match="system file browser could not be started"):
+        store.reveal(0, system="Darwin")
+    store.close()
+
+
+def test_reveal_reports_unsupported_platform(tmp_path):
+    store = LocalDocumentStore(cache_root=tmp_path / "cache")
+    store.save(0, "fictional.pdf", pdf_bytes())
+    with pytest.raises(ValueError, match="not supported"):
+        store.reveal(0, system="UnsupportedOS")
+    store.close()
+
+
+def test_pdf_files_are_excluded_from_git():
+    repository = Path(__file__).resolve().parents[1]
+    gitignore = repository / ".gitignore"
+    assert "*.pdf" in gitignore.read_text(encoding="utf-8").splitlines()
+    tracked_pdfs = subprocess.run(
+        ["git", "ls-files", "--", "*.pdf"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert not tracked_pdfs.stdout.strip()
 
 
 def test_optional_secondary_slots_can_be_added_removed_and_clear_all_unlinks_files(tmp_path):

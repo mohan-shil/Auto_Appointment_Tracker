@@ -1,3 +1,5 @@
+import sys
+
 from streamlit.testing.v1 import AppTest
 
 from modules.document_store import LocalDocumentStore
@@ -46,6 +48,7 @@ def test_uploaded_document_metadata_persists_across_reruns_and_clear_all_removes
     app.run(timeout=15)
     assert not app.exception
     assert "fictional-primary.pdf" in [item.value.split(": ", 1)[-1] for item in app.text]
+    assert str(saved.path) in [item.value for item in app.code]
     assert app.session_state["document_store"] is store
     next(button for button in app.button if button.label == "Clear All Files").click().run(timeout=15)
     assert not app.exception
@@ -53,6 +56,24 @@ def test_uploaded_document_metadata_persists_across_reruns_and_clear_all_removes
     assert not store.session_dir.exists()
     assert app.session_state["document_store"] is not store
     assert not app.session_state["document_store"].documents
+
+
+def test_manual_chromium_upload_guidance_is_displayed_with_a_saved_pdf_path():
+    app = AppTest.from_file("app.py").run(timeout=15)
+    store = app.session_state["document_store"]
+    store.save(0, "fictional-primary.pdf", b"%PDF-1.7\n% synthetic\n%%EOF\n")
+    app.run(timeout=15)
+    assert not app.exception
+    instruction = next(item.value for item in app.info if "To upload this saved copy in Chromium" in item.value)
+    assert "complete the upload yourself" in instruction
+    if sys.platform == "darwin":
+        assert "Command + Shift + G" in instruction
+        assert any(button.label == "Reveal PDF in Finder" for button in app.button)
+    elif sys.platform == "win32":
+        assert any(button.label == "Show PDF in Explorer" for button in app.button)
+    elif sys.platform.startswith("linux"):
+        assert any(button.label == "Open Containing Folder" for button in app.button)
+    store.close()
 
 
 def test_browser_error_and_manual_boundaries_are_displayed_without_portal_access():
