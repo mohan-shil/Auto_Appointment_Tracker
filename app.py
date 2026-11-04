@@ -8,8 +8,10 @@ from dotenv import load_dotenv
 
 from config.readiness import MAX_APPLICANTS, OFFICIAL_FAQ_URL, webfile_age_status
 from models.applicant import ManualConfirmations
+from modules.browser import BrowserLaunchError, BrowserSession, open_official_site
 from modules.data_export import serialize_reviewed_applicants
 from modules.data_validator import extract_fields, is_fully_verified, validate_account_profile, validate_applicant, validate_field_value
+from modules.ivac_automation import FAQ_BOOKING_STEPS, SAFE_SCOPE, confirmed_applicant_summary
 from modules.ocr_reader import OCRProcessingError, OCRUnavailable, apply_ocr_results, get_ocr_languages, get_ocr_status, run_local_ocr
 from modules.pdf_reader import PDFReadError, extract_pdf
 
@@ -301,6 +303,55 @@ if completed_count == len(checklist) and not all_webfiles_uploaded:
     st.warning("Checklist is complete, but each listed applicant still needs a readable Webfile before applicant readiness can be shown.")
 if st.session_state.get("check_webfile_age") and not all_webfiles_recent:
     st.warning("Checklist says the age check is complete, but one or more dates are missing or outside the 30-day limit.")
+
+st.subheader("IVAC Browser Assistant")
+st.caption("Opens a separate visible Chromium window at the official portal. The browser is not controlled by this dashboard after launch.")
+browser_session = st.session_state.get("ivac_browser_session")
+browser_active = isinstance(browser_session, BrowserSession) and not browser_session.closed
+browser_open = browser_active and browser_session.is_open
+browser_status = "Open — continue manually in the Chromium window" if browser_open else (
+    "Window closed — use Close browser to clean up the session" if browser_active else "Closed"
+)
+st.write("Browser status: " + browser_status)
+browser_actions = st.columns(2)
+if browser_actions[0].button("Open IVAC Website", disabled=browser_active, key="open_ivac_browser"):
+    try:
+        st.session_state["ivac_browser_session"] = open_official_site()
+        st.session_state.pop("ivac_browser_error", None)
+        st.rerun()
+    except BrowserLaunchError as exc:
+        st.session_state["ivac_browser_error"] = str(exc)
+if browser_actions[1].button("Close browser", disabled=not browser_active, key="close_ivac_browser"):
+    try:
+        browser_session.close()
+    except Exception:
+        st.session_state["ivac_browser_error"] = "The browser did not close cleanly. Close its Chromium window manually."
+    st.session_state.pop("ivac_browser_session", None)
+    st.rerun()
+if st.session_state.get("ivac_browser_error"):
+    st.error(st.session_state["ivac_browser_error"])
+st.info("Sign in yourself in Chromium. Enter your credentials and OTP only on the official site. Do not share them with agents or intermediaries.")
+if completed_count == len(checklist) and all_webfiles_recent and all_webfiles_uploaded:
+    st.write("Current workflow guidance: Your preparation checklist is marked complete. You can continue manually; this does not establish that an appointment slot is available.")
+else:
+    st.write("Current workflow guidance: Review the incomplete Webfiles and checklist items before you proceed. Website availability is not checked.")
+
+st.markdown("**Applicant preparation summary**")
+browser_applicants = confirmed_applicant_summary(reviewed_applicants)
+if not browser_applicants:
+    st.caption("Upload and review a Webfile to see confirmed applicant details here.")
+for applicant in browser_applicants:
+    with st.container(border=True):
+        st.markdown(f"**{applicant['applicant']}** · {applicant['status']}")
+        if applicant["fields"]:
+            summary_columns = st.columns(2)
+            for field_index, field in enumerate(applicant["fields"].values()):
+                summary_columns[field_index % 2].write(f"{field['label']}: {field['value']}")
+        else:
+            st.caption("No confirmed and validated identity fields are available yet.")
+st.caption("Manual portal workflow guidance (from the published IVAC FAQ): " + " → ".join(FAQ_BOOKING_STEPS))
+st.caption(SAFE_SCOPE)
+st.warning("No automatic field entry, upload, login, OTP, CAPTCHA, form submission, appointment polling/reservation, or payment is performed. Complete every portal step yourself.")
 
 with st.expander("Optional JSON export of reviewed information"):
     st.warning("Sensitive personal information may be included. The export excludes original PDF content and is created only after your explicit confirmation.")
