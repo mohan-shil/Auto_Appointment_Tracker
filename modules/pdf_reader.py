@@ -1,7 +1,7 @@
 """Local PDF validation and page-by-page text extraction."""
 
 from dataclasses import dataclass
-from typing import BinaryIO, Optional
+from typing import BinaryIO, Optional, Tuple
 
 import fitz
 
@@ -14,11 +14,26 @@ class PDFReadError(ValueError):
 
 
 @dataclass(frozen=True)
+class PDFWord:
+    """A word and its location on the PDF page (coordinates are PDF points)."""
+
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    block_number: int = 0
+    line_number: int = 0
+    word_number: int = 0
+
+
+@dataclass(frozen=True)
 class PDFPage:
     page_number: int
     text: str
     ocr_text: Optional[str] = None
     ocr_confidence: Optional[float] = None
+    words: Tuple[PDFWord, ...] = ()
 
     @property
     def text_for_review(self) -> str:
@@ -82,7 +97,16 @@ def extract_pdf(upload: BinaryIO, filename: str, max_bytes: int = MAX_PDF_BYTES)
                 raise PDFReadError("The PDF has no pages. Please choose a complete application PDF.")
             if document.page_count > 300:
                 raise PDFReadError("The PDF has more than 300 pages. Split it into smaller documents before upload.")
-            pages = tuple(PDFPage(index + 1, page.get_text("text", sort=True).strip()) for index, page in enumerate(document))
+            pages = []
+            for index, page in enumerate(document):
+                text = page.get_text("text", sort=True).strip()
+                words = tuple(
+                    PDFWord(str(word[4]), float(word[0]), float(word[1]), float(word[2]), float(word[3]), int(word[5]), int(word[6]), int(word[7]))
+                    for word in page.get_text("words", sort=True)
+                    if len(word) >= 8 and str(word[4]).strip()
+                )
+                pages.append(PDFPage(index + 1, text, words=words))
+            pages = tuple(pages)
     except PDFReadError:
         raise
     except Exception as exc:

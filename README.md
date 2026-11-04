@@ -5,11 +5,12 @@ A local applicant-assistance tool for reviewing IVAC Webfiles and preparing for 
 ## What it does
 
 - Accepts up to four applicant Webfile PDFs (one primary and up to three secondary applicants), each up to 15 MB.
-- Extracts selectable text locally with PyMuPDF, preserves each page's original text, and limits PDFs to 300 pages.
+- Extracts selectable text and positioned words locally with PyMuPDF, preserves each page's original text, and limits PDFs to 300 pages.
 - Can optionally run local Tesseract OCR on pages that have no selectable text. OCR output is kept separate from native PDF text and every extracted identity value still requires applicant confirmation.
 - Flags empty, unreadable, password-protected, scanned/no-text, duplicate, and conflicting data for review. It never guesses or silently corrects identity details.
 - Recognizes configurable name, passport number, DOB, nationality, gender, Webfile, visa reference, passport issue date and passport expiry labels. It handles split lines and spacing variations while avoiding generic application dates for passport-specific date fields.
-- Shows field-level source page and excerpt, extraction method, heuristic confidence category, and applicant verification status.
+- Uses word positions and visual rows to separate adjacent columns and field values. Shows field-level source page and excerpt, extraction method, heuristic confidence category, applicant confirmation, and validation result.
+- Normalizes valid DOB and passport issue/expiry dates to `YYYY-MM-DD` while retaining the original extracted string for comparison.
 - Provides an applicant list, missing-information indicators, 30-day Webfile date check, and a manually completed preparation checklist.
 - Offers an explicit JSON download of applicant-confirmed values; the export excludes source excerpts and original PDF contents.
 - Processes files and values in the Streamlit session only; this project does not write them to disk or send applicant data to an external AI service. Streamlit usage statistics are disabled in `.streamlit/config.toml`.
@@ -74,7 +75,7 @@ streamlit run app.py
 
 Open the local address Streamlit prints. Choose the applicant count, upload each original Webfile PDF, and compare all displayed values against the original documents. Enter portal profile details manually in the separate profile section. Read the Webfile date from each original document and use the checklist to record your own confirmations.
 
-Each applicant card shows recognized and missing fields, source page excerpts, extraction method, a qualitative heuristic confidence label, and a checkbox for your verification. The confidence labels are not statistical probabilities. Similar values found more than once and conflicting values are flagged for review. Date values are displayed as found; date format validation accepts ISO or day-first forms, so verify every identity date against the PDF.
+Each applicant card shows recognized and missing fields, source page excerpts, extraction method, a qualitative heuristic confidence label, a checkbox for your verification, and a separate validation result. The dashboard separately counts extracted, applicant-confirmed, validated, and needs-review fields. A field is fully verified only when it has a value, is confirmed by the applicant, and passes its applicable validation. The confidence labels are not statistical probabilities. Repeated and conflicting values are flagged for review. Valid date formats (`DD-MMM-YYYY`, `DD/MM/YYYY`, `DD-MM-YYYY`, and `YYYY-MM-DD`) normalize to ISO for review; original extracted date strings remain visible beside their source evidence. Verify each identity date against the PDF.
 
 ## Export reviewed data
 
@@ -88,7 +89,7 @@ The app detects PDFs with no selectable text and identifies pages without text. 
 pytest
 ```
 
-Tests use synthetic PDFs and values, including multiple layouts, split-line labels, multipage and image-only pages, unavailable and simulated low-quality OCR, conflicting passport values, date interpretation, and export validation. OCR tests use a synthetic Tesseract stub; they do not require installing the OCR engine or access the official website.
+Tests use entirely synthetic PDFs and values, including positioned multi-column layouts, header/hotel text near applicant names, split-line labels, adjacent passport and issue dates, DOB and religion, gender and marital status, an empty nationality/status label, multipage and image-only pages, unavailable and simulated low-quality OCR, conflicting passport values, date normalization, and export validation. OCR tests use a synthetic Tesseract stub; they do not require installing the OCR engine or access the official website. The project workspace does not include an actual applicant Webfile, so the aliases and synthetic layouts are tested without real passport data.
 
 ## Privacy and limitations
 

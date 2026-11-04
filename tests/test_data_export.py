@@ -17,10 +17,12 @@ def test_export_includes_only_applicant_confirmed_allowlisted_fields():
                 "extraction_method": "Selectable text",
                 "confidence": "High",
                 "verification_status": "Confirmed by applicant",
+                "validation_passed": True,
+                "validation_message": "Passed.",
                 "source_text": "Passport No: ZZ123456",
                 "pdf_content": "large original document contents",
             },
-            {"key": "full_name", "value": "Not yet reviewed", "verification_status": "Needs verification"},
+            {"key": "full_name", "value": "Not yet reviewed", "verification_status": "Needs verification", "validation_passed": True},
         ],
     }]
     payload = build_review_export(applicants)
@@ -39,8 +41,18 @@ def test_export_requires_at_least_one_confirmed_value():
         build_review_export([{"applicant": "Primary", "fields": [{"value": "ZZ", "verification_status": "Needs verification"}]}])
 
 
+def test_export_rejects_applicant_confirmed_but_invalid_date():
+    with pytest.raises(ValueError, match="Confirm at least one"):
+        build_review_export([{"applicant": "Primary", "fields": [{
+            "key": "date_of_birth", "value": "31-Feb-1990",
+            "verification_status": "Confirmed by applicant", "validation_passed": False,
+        }]}])
+
+
 def test_profile_export_requires_separate_explicit_confirmation():
     with pytest.raises(ValueError, match="Confirm at least one"):
-        build_review_export([], {"confirmed": False, "values": {"email": "safe@example.test"}})
-    exported = build_review_export([], {"confirmed": True, "values": {"email": "safe@example.test", "mobile_number": ""}})
+        build_review_export([], {"confirmed": False, "validation_passed": True, "values": {"email": "safe@example.test"}})
+    with pytest.raises(ValueError, match="Confirm at least one"):
+        build_review_export([], {"confirmed": True, "validation_passed": False, "values": {"email": "invalid"}})
+    exported = build_review_export([], {"confirmed": True, "validation_passed": True, "values": {"email": "safe@example.test", "mobile_number": ""}})
     assert exported["primary_account_profile"] == {"email": "safe@example.test"}

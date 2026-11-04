@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from config.readiness import MAX_APPLICANTS, OFFICIAL_FAQ_URL, webfile_age_status
 from models.applicant import ManualConfirmations
 from modules.data_export import serialize_reviewed_applicants
-from modules.data_validator import extract_fields, validate_account_profile, validate_applicant
+from modules.data_validator import extract_fields, is_fully_verified, validate_account_profile, validate_applicant, validate_field_value
 from modules.ocr_reader import OCRProcessingError, OCRUnavailable, apply_ocr_results, get_ocr_languages, get_ocr_status, run_local_ocr
 from modules.pdf_reader import PDFReadError, extract_pdf
 
@@ -31,8 +31,10 @@ all_webfiles_uploaded = True
 any_uploaded_webfile = False
 primary_webfile_ready = False
 reviewed_applicants = []
-reviewed_field_count = 0
-reviewable_field_count = 0
+extracted_field_count = 0
+applicant_confirmed_field_count = 0
+validated_field_count = 0
+fields_needing_review_count = 0
 
 for index in range(int(applicant_count)):
     role = "Primary applicant" if index == 0 else f"Secondary applicant {index}"
@@ -120,6 +122,8 @@ for index in range(int(applicant_count)):
                         with st.container(border=True):
                             st.markdown(f"**{field.label}**")
                             st.caption(f"Method: {field.extraction_method} · Heuristic confidence: {field.confidence} · {field.status}")
+                            if field.value is not None:
+                                st.caption(f"Extracted value: {field.value}")
                             if field.source_references:
                                 for reference in field.source_references:
                                     st.caption(f"Source page {reference.page_number} · {reference.extraction_method} · confidence {reference.confidence}")
@@ -128,12 +132,16 @@ for index in range(int(applicant_count)):
                                 st.warning("Not detected in the configured labels. Review the original PDF manually.")
                             if field.status.startswith(("Ambiguous", "Conflicting", "Duplicate")):
                                 st.warning("Multiple or repeated values need your review. Check each source reference before choosing.")
-                            initial = field.value or ""
+                            initial = field.normalized_value or field.value or ""
                             if field.status.startswith(("Ambiguous", "Conflicting", "Duplicate")):
                                 initial = ""
+                            if field.normalized_value and field.value and field.normalized_value != field.value:
+                                st.caption(f"Date normalized for validation: {field.normalized_value} · original extracted value: {field.value}")
                             form_values[field.key] = st.text_input("Reviewed value", value=initial, key=f"applicant_{index}_{field.key}", placeholder="Needs review" if not initial else "")
                             confirmed = st.checkbox("I verified this value against the original Webfile", key=f"confirm_{index}_{field.key}")
                             st.caption("Applicant verification: " + ("Confirmed by applicant" if confirmed else "Needs verification"))
+                            validation = validate_field_value(field.key, form_values[field.key])
+                            st.caption("Validation: " + validation.message)
                             manual_page = 0
                             if not field.source_references or field.status.startswith(("Ambiguous", "Conflicting", "Duplicate")):
                                 manual_page = st.number_input(
@@ -144,32 +152,43 @@ for index in range(int(applicant_count)):
                                     step=1,
                                     key=f"manual_page_{index}_{field.key}",
                                 )
+                            if field.value:
+                                extracted_field_count += 1
                             if form_values[field.key]:
-                                reviewable_field_count += 1
                                 if confirmed:
-                                    reviewed_field_count += 1
+                                    applicant_confirmed_field_count += 1
+                                if validation.passed:
+                                    validated_field_count += 1
+                            if not is_fully_verified(form_values[field.key], confirmed, validation.passed):
+                                fields_needing_review_count += 1
                             confirmed_fields.append({
                                 "key": field.key,
                                 "label": field.label,
-                                "value": form_values[field.key],
+                                "value": validation.normalized_value or form_values[field.key],
+                                "normalized_value": validation.normalized_value,
+                                "original_extracted_value": field.original_value,
                                 "source_pages": list(field.source_pages) if field.source_pages else ([int(manual_page)] if manual_page else []),
                                 "extraction_method": field.extraction_method if field.value else ("Manual entry" if form_values[field.key] else "Not detected"),
                                 "confidence": field.confidence,
                                 "verification_status": "Confirmed by applicant" if confirmed else "Needs verification",
+                                "validation_passed": validation.passed,
+                                "validation_message": validation.message,
                             })
                     populated_fields = [item for item in confirmed_fields if item["value"]]
-                    field_review_complete = bool(populated_fields) and all(item["verification_status"] == "Confirmed by applicant" for item in populated_fields)
+                    field_review_complete = bool(populated_fields) and all(
+                        is_fully_verified(item["value"], item["verification_status"] == "Confirmed by applicant", item["validation_passed"])
+                        for item in populated_fields
+                    )
                     applicant_model, validation_errors = validate_applicant(form_values)
-                    has_extracted_identity = any(field.value for field in fields)
-                    webfile_ok = (has_extracted_identity or field_review_complete) and applicant_model is not None and not validation_errors
+                    webfile_ok = field_review_complete and applicant_model is not None and not validation_errors
                     for error in validation_errors:
                         st.warning(error)
                     if not fields or all(field.value is None for field in fields):
                         st.warning("No configured labels were recognized. Review the Webfile manually.")
                     st.caption("Read all displayed text as a proposed extraction; confirm every identity value yourself.")
                     populated_count = sum(1 for item in confirmed_fields if item["value"])
-                    confirmed_count = sum(1 for item in confirmed_fields if item["value"] and item["verification_status"] == "Confirmed by applicant")
-                    st.progress(confirmed_count / max(populated_count, 1), text=f"{confirmed_count} of {populated_count} populated fields verified")
+                    fully_verified_count = sum(1 for item in confirmed_fields if is_fully_verified(item["value"], item["verification_status"] == "Confirmed by applicant", item["validation_passed"]))
+                    st.progress(fully_verified_count / max(populated_count, 1), text=f"{fully_verified_count} of {populated_count} populated fields fully verified")
                     reviewed_applicants.append({"applicant": role, "fields": confirmed_fields})
 
         webfile_date = st.date_input(f"Date printed on {role.lower()} Webfile (read it from the document)", value=None, key=f"webfile_date_{index}", max_value=date.today())
@@ -193,7 +212,11 @@ for index in range(int(applicant_count)):
 
 st.subheader("Applicant list")
 st.dataframe(applicant_records, hide_index=True, width="stretch")
-st.progress(reviewed_field_count / max(reviewable_field_count, 1), text=f"Document review progress: {reviewed_field_count} of {reviewable_field_count} populated fields verified")
+counter_columns = st.columns(4)
+counter_columns[0].metric("Extracted fields", extracted_field_count)
+counter_columns[1].metric("Applicant-confirmed", applicant_confirmed_field_count)
+counter_columns[2].metric("Validated", validated_field_count)
+counter_columns[3].metric("Needs review", fields_needing_review_count)
 if applicant_count > MAX_APPLICANTS:
     st.error("IVAC FAQ limits one account to four applicants.")
 elif not any_uploaded_webfile:
@@ -225,7 +248,7 @@ with st.expander("Review account profile fields", expanded=False):
 profile_ready = not missing_profile and not profile_errors
 st.caption(f"Account profile information: {len(profile_required) - len(missing_profile)} of {len(profile_required)} fields entered" + ("; format review needed." if profile_errors else "."))
 profile_confirmed = st.checkbox("I reviewed the account-profile information against the primary Webfile", key="profile_confirmed")
-profile_for_export = {"confirmed": profile_confirmed, "values": profile_values}
+profile_for_export = {"confirmed": profile_confirmed, "validation_passed": profile_ready, "values": profile_values}
 try:
     current_export_data = serialize_reviewed_applicants(reviewed_applicants, profile_for_export)
     current_export_signature = hashlib.sha256(current_export_data).hexdigest()
