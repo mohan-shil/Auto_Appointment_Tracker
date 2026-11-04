@@ -1,3 +1,0 @@
-# Optional local OCR wrapper. Install Tesseract separately (macOS: brew install tesseract).
-pytesseract>=0.3.10,<0.4
-Pillow>=9.0,<12.0

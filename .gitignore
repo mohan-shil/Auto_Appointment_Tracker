@@ -5,7 +5,6 @@ __pycache__/
 venv/
 .env
 .env.*
-!.env.example
 *.pdf
 *.png
 *.log
@@ -13,8 +12,10 @@ secrets/
 .streamlit/secrets.toml
 uploads/
 extracted_data/
-reviewed_applicant_information.json
-*.applicant.json
+local_storage/
+cache/
+temp/
+*.tmp
 **/__pycache__/
 *.pyc
 .DS_Store

@@ -1,11 +1,13 @@
 """Visible, applicant-controlled browser launch for the official IVAC site."""
 
 from dataclasses import dataclass
+import atexit
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
 
 IVAC_URL = "https://appointment.ivacbd.com/"
+_BROWSER_SESSIONS = []
 
 
 class BrowserLaunchError(RuntimeError):
@@ -53,6 +55,8 @@ class BrowserSession:
             return not self.page.is_closed()
         except AttributeError:
             return True
+        except Exception:
+            return False
 
     def close(self) -> None:
         """Close Chromium and stop the Playwright driver, including partial cleanup."""
@@ -62,7 +66,22 @@ class BrowserSession:
         try:
             self.browser.close()
         finally:
-            self.playwright.stop()
+            try:
+                self.playwright.stop()
+            finally:
+                if self in _BROWSER_SESSIONS:
+                    _BROWSER_SESSIONS.remove(self)
+
+
+def _close_browser_sessions() -> None:
+    for session in tuple(_BROWSER_SESSIONS):
+        try:
+            session.close()
+        except Exception:
+            pass
+
+
+atexit.register(_close_browser_sessions)
 
 
 def open_official_site(url: str = IVAC_URL, playwright_factory: Optional[Any] = None) -> BrowserSession:
@@ -82,7 +101,9 @@ def open_official_site(url: str = IVAC_URL, playwright_factory: Optional[Any] = 
         browser = playwright.chromium.launch(headless=False)
         page = browser.new_page()
         page.goto(safe_url, wait_until="domcontentloaded", timeout=30000)
-        return BrowserSession(playwright, browser, page)
+        session = BrowserSession(playwright, browser, page)
+        _BROWSER_SESSIONS.append(session)
+        return session
     except Exception as exc:
         if browser is not None:
             try:
