@@ -44,6 +44,24 @@ Open the local address shown by Streamlit. Use **Applicant Documents** to upload
 
 After the primary PDF is present, choose **Open Browser**. A separate visible Chromium window opens at <https://appointment.ivacbd.com/>. Sign in yourself and complete every website step manually. Use the **Appointment Workflow** checkboxes to track your own progress, then choose **Close Browser** when finished.
 
+## IVAC Portal Inspection Mode
+
+An authorized tester can use the app to export a privacy-minimized description of pages they can access. The inspection section works only with the visible Chromium session opened by this dashboard. The tester manually navigates; **Capture Current Page Structure** only reads visible semantic labels and structure. It never clicks, fills, submits, or changes portal controls.
+
+### Bangladesh tester steps
+
+1. Pull the latest code from GitHub: `git pull origin main`.
+2. Install/update dependencies and Chromium using the commands above, then start the app with `streamlit run app.py`.
+3. Upload the required primary Webfile PDF and choose **Open Browser**.
+4. In the visible Chromium window, open the official site and navigate manually. Enter credentials and OTPs only on the official IVAC site; do not send them to the developer or include them in a report. Only visit pages you are authorized to access. Do not complete a real booking or payment for inspection.
+5. In the dashboard, select the corresponding page name and choose **Capture Current Page Structure**. Repeat for each authorized page. A page is counted only after the app verifies that visible structure was returned.
+6. Choose **Export Inspection Report**. By default, the JSON file is saved under `~/Documents/IVAC-Inspection/` (macOS/Linux) or the equivalent Documents folder on Windows. The dashboard displays the exact path.
+7. Review the JSON locally, then send/attach that sanitized inspection report to the developer through an agreed channel. Do not send PDFs, credentials, OTPs, screenshots, or browser data.
+
+The report contains a generic page title when recognized, official hostname, sanitized pathname, visible headings, buttons, links, form labels and control metadata, dropdown options, dialogs, navigation labels, and a boolean CAPTCHA-presence indicator. Query strings and fragments are removed. Unknown or potentially personal text is replaced with `[omitted]`; password and hidden controls are excluded. It does not read input values, page HTML/body text, cookies, local/session storage, network traffic, authorization data, screenshots, or CAPTCHA internals. Reports are written with restrictive local permissions and outside the repository. Use **Clear Inspection Reports** to remove captured reports and reports exported by the current app session.
+
+Inspection reports describe only the pages the tester actually captured; they are not a claim that an inaccessible or authenticated page was observed. They may omit unfamiliar interface wording by design. Never use a report as proof of slot availability.
+
 ## Temporary storage and cleanup
 
 Files are stored under an application-specific directory inside the operating system's temporary folder, outside the Git checkout. Each app session uses a random directory. On POSIX systems, the cache/session directories use mode `0700` and PDF files use mode `0600`. PDF bytes are copied as-is; filenames appear only in the local dashboard and are not used as on-disk paths. The app stores no credentials, OTPs, or account data.
@@ -66,11 +84,12 @@ See [the detailed observation and guidance notes](docs/IVAC_BROWSER_GUIDE.md) fo
 
 ## Project structure
 
-- `app.py` — four-slot document manager, browser controls, workflow checklist, and storage status.
+- `app.py` — four-slot document manager, browser controls, workflow checklist, inspection interface, and storage status.
 - `modules/document_store.py` — temporary session directories, PDF-only checks, byte-preserving writes, permissions, and cleanup.
 - `modules/browser.py` — official-URL validation, visible Playwright Chromium lifecycle, and shutdown cleanup.
+- `modules/portal_inspector.py` — read-only visible page structure extraction and private JSON export.
 - `modules/workflow.py` — static applicant-controlled workflow labels.
-- `tests/` — document storage, browser lifecycle, URL validation, and Streamlit state/UI tests.
+- `tests/` — document storage, browser lifecycle, URL validation, synthetic inspection fixtures, and Streamlit state/UI tests.
 
 The file manager checks the `.pdf` filename extension and a PDF header signature. It does not open or validate the document structure.
 
@@ -81,4 +100,4 @@ source .venv/bin/activate
 python -m pytest -v
 ```
 
-Browser tests use mocks. Document tests use fictional synthetic PDF bytes. No automated booking or payment tests run against the IVAC portal.
+Browser tests use mocks and a synthetic local HTML fixture. Document tests use fictional synthetic PDF bytes. No automated booking, payment, or inspection tests run against the live IVAC portal.

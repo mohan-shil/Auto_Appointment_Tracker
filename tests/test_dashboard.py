@@ -12,10 +12,14 @@ def test_dashboard_starts_with_v2_sections_and_primary_required():
     headers = [item.value for item in app.header]
     assert "A. Applicant Documents" in headers
     assert "B. IVAC Browser Assistant" in headers
+    assert "IVAC Portal Inspection Mode" in headers
     assert "C. Appointment Workflow" in headers
     assert "D. Session & Storage Management" in headers
     open_button = next(button for button in app.button if button.label == "Open Browser")
     assert open_button.disabled
+    assert next(button for button in app.button if button.label == "Capture Current Page Structure").disabled
+    assert next(button for button in app.button if button.label == "Export Inspection Report").disabled
+    assert next(button for button in app.button if button.label == "Clear Inspection Reports").disabled
     assert any("Primary Webfile required" in item.value for item in app.warning)
 
 

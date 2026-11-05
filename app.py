@@ -6,6 +6,7 @@ import streamlit as st
 
 from modules.browser import BrowserLaunchError, BrowserSession, open_official_site
 from modules.document_store import APPLICANT_SLOTS, DocumentStoreError, LocalDocumentStore, cleanup_stale_sessions
+from modules.portal_inspector import InspectionError, capture_portal_page, clear_exported_reports, export_inspection_reports
 from modules.workflow import APPOINTMENT_WORKFLOW
 
 APPLICANT_LABELS = (
@@ -170,6 +171,46 @@ if st.session_state.get("browser_error"):
     st.error(st.session_state["browser_error"])
 st.caption("First use may require Chromium setup: `python -m playwright install chromium`.")
 st.info("Sign in manually. Enter credentials and email/mobile OTPs only on the official IVAC site. Do not share them with agents or intermediaries.")
+
+st.header("IVAC Portal Inspection Mode")
+st.write("Manually navigate the visible IVAC browser, then capture its visible page structure. Capture reads page labels and structure only; it does not click, fill, submit, inspect values, save screenshots, or access browser storage.")
+st.caption("Reports may contain generic visible interface labels. The inspector omits unknown text and sensitive input types, and strips URL query strings and fragments. Never capture a page you are not authorized to access.")
+inspection_names = ("Public landing page", "Login page", "OTP page", "Dashboard", "Appointment section", "File upload page", "Calendar page", "Centre selection page", "Payment page", "Other")
+inspection_label = st.selectbox("Captured page name", inspection_names, key="inspection_page_name")
+reports = st.session_state.setdefault("portal_inspection_reports", [])
+exported_reports = st.session_state.setdefault("portal_inspection_exported_paths", [])
+inspect_col, inspection_info_col = st.columns([1, 2])
+if inspect_col.button("Capture Current Page Structure", disabled=not browser_open, key="capture_portal_structure"):
+    try:
+        report = capture_portal_page(browser_session, inspection_label)
+    except InspectionError as exc:
+        st.error(str(exc))
+    else:
+        reports.append(report)
+        st.session_state["portal_inspection_reports"] = reports
+        st.success(f"Captured {report['page_name']} at {report['captured_at']}.")
+inspection_info_col.metric("Inspection counter", len(reports))
+if reports:
+    latest = reports[-1]
+    st.caption(f"Latest captured page: {latest['page_name']} · {latest['captured_at']}")
+else:
+    st.caption("No pages captured yet. A report is recorded only after visible structure is verified.")
+export_col, clear_col_reports = st.columns(2)
+if export_col.button("Export Inspection Report", disabled=not reports, key="export_inspection_reports"):
+    try:
+        export_path = export_inspection_reports(reports)
+    except InspectionError as exc:
+        st.error(str(exc))
+    else:
+        exported_reports.append(str(export_path))
+        st.session_state["portal_inspection_exported_paths"] = exported_reports
+        st.success(f"Sanitized inspection JSON exported to {export_path}")
+if clear_col_reports.button("Clear Inspection Reports", disabled=not reports, key="clear_inspection_reports"):
+    clear_exported_reports(exported_reports)
+    st.session_state["portal_inspection_reports"] = []
+    st.session_state["portal_inspection_exported_paths"] = []
+    st.rerun()
+st.caption("Inspection is limited to the visible page in this app-launched browser session. Password and hidden controls are excluded; no screenshots, page HTML, form values, cookies, storage, or network data are collected.")
 
 st.header("C. Appointment Workflow")
 st.caption("Mark steps as you complete them yourself. These checkboxes do not interact with or read the IVAC website.")
