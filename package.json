@@ -1,0 +1,26 @@
+{
+  "name": "auto_appointment_tracker",
+  "version": "1.0.0",
+  "description": "A local Streamlit desktop-style helper for managing original IVAC Webfile PDFs and opening the official appointment portal in visible Google Chrome. Applicants perform all portal actions themselves.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mohan-shil/Auto_Appointment_Tracker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/mohan-shil/Auto_Appointment_Tracker/issues"
+  },
+  "homepage": "https://github.com/mohan-shil/Auto_Appointment_Tracker#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6"
+  }
+}
