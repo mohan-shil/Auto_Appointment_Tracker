@@ -2,6 +2,7 @@ import sys
 
 from streamlit.testing.v1 import AppTest
 
+from modules.browser import IVAC_URL
 from modules.document_store import LocalDocumentStore
 
 
@@ -12,6 +13,7 @@ def test_dashboard_starts_with_v2_sections_and_primary_required():
     headers = [item.value for item in app.header]
     assert "A. Applicant Documents" in headers
     assert "B. IVAC Browser Assistant" in headers
+    assert next(item for item in app.text_input if item.label == "IVAC link").value == IVAC_URL
     assert "IVAC Portal Inspection Mode" in headers
     assert "C. Appointment Workflow" in headers
     assert "D. Session & Storage Management" in headers

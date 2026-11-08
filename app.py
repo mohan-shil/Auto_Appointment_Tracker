@@ -4,7 +4,13 @@ import sys
 
 import streamlit as st
 
-from modules.browser import BrowserLaunchError, BrowserSession, open_official_site
+from modules.browser import (
+    BrowserLaunchError,
+    BrowserSession,
+    IVAC_URL,
+    available_chrome_profiles,
+    open_official_site,
+)
 from modules.document_store import APPLICANT_SLOTS, DocumentStoreError, LocalDocumentStore, cleanup_stale_sessions
 from modules.portal_inspector import InspectionError, capture_portal_page, clear_exported_reports, export_inspection_reports
 from modules.workflow import APPOINTMENT_WORKFLOW
@@ -86,16 +92,16 @@ for slot, applicant_label in enumerate(APPLICANT_LABELS):
             if not file_available:
                 st.error("The saved PDF is missing. Upload it again before continuing.")
             elif sys.platform == "darwin":
-                st.info("To upload this saved copy in Chromium, open the IVAC file picker and use Command + Shift + G, then enter the displayed file path. Select the correct PDF and complete the upload yourself.")
+                st.info("To upload this saved copy in Chrome, open the IVAC file picker and use Command + Shift + G, then enter the displayed file path. Select the correct PDF and complete the upload yourself.")
                 reveal_label = "Reveal PDF in Finder"
             elif sys.platform == "win32":
-                st.info("To upload this saved copy in Chromium, open the IVAC file picker, navigate to the displayed file path, and select the correct PDF yourself.")
+                st.info("To upload this saved copy in Chrome, open the IVAC file picker, navigate to the displayed file path, and select the correct PDF yourself.")
                 reveal_label = "Show PDF in Explorer"
             elif sys.platform.startswith("linux"):
-                st.info("To upload this saved copy in Chromium, open the IVAC file picker, navigate to the displayed file path, and select the correct PDF yourself.")
+                st.info("To upload this saved copy in Chrome, open the IVAC file picker, navigate to the displayed file path, and select the correct PDF yourself.")
                 reveal_label = "Open Containing Folder"
             else:
-                st.info("To upload this saved copy in Chromium, use the displayed path in the IVAC file picker and select the correct PDF yourself.")
+                st.info("To upload this saved copy in Chrome, use the displayed path in the IVAC file picker and select the correct PDF yourself.")
                 reveal_label = None
                 st.caption("Automatic file reveal is not supported on this operating system.")
             if reveal_label and st.button(reveal_label, key=f"reveal_pdf_{slot}"):
@@ -139,37 +145,60 @@ uploaded_count = len(document_store.documents)
 st.progress(uploaded_count / APPLICANT_SLOTS, text=f"{uploaded_count} of {APPLICANT_SLOTS} applicant PDF slots filled · {secondary_count} secondary file(s)")
 
 st.header("B. IVAC Browser Assistant")
-st.write("Open the official portal in a separate visible Chromium window. The applicant controls that window directly.")
+st.write("Open the official portal in visible Google Chrome using one of your existing local profiles.")
+ivac_url = st.text_input(
+    "IVAC link",
+    value=IVAC_URL,
+    help="You can edit the path, but for safety the link must stay on appointment.ivacbd.com and cannot include query parameters or fragments.",
+)
+chrome_profiles = available_chrome_profiles()
+selected_profile = None
+if chrome_profiles:
+    selected_profile = st.selectbox(
+        "Google Chrome profile",
+        chrome_profiles,
+        help="Choose the profile where your VPN extension is installed and enabled. You can identify a profile folder in Chrome at chrome://version.",
+    )
+    st.caption("Close every Google Chrome window before opening the selected profile. The VPN extension will be available if it is installed and enabled in that profile.")
+else:
+    st.warning("No existing Google Chrome profiles were found. Open Google Chrome once to create a profile, then restart this app.")
 browser_session = st.session_state.get("ivac_browser_session")
 browser_active = isinstance(browser_session, BrowserSession) and not browser_session.closed
 browser_open = browser_active and browser_session.is_open
 if browser_open:
-    st.success("Browser status: Visible Chromium window is open. The app does not read the current page or login state.")
+    st.success("Browser status: Visible Google Chrome window is open. The app does not read the current page or login state.")
 elif browser_active:
-    st.warning("Browser status: The Chromium page appears closed. Close the browser session to clean up its resources.")
+    st.warning("Browser status: The Chrome page appears closed. Close the browser session to clean up its resources.")
 else:
     st.info("Browser status: Not open.")
 
 browser_col, browser_status_col = st.columns([1, 2])
-if browser_col.button("Open Browser", type="primary", disabled=not primary_ready or browser_active, key="open_ivac_browser"):
+if browser_col.button(
+    "Open Browser",
+    type="primary",
+    disabled=not primary_ready or browser_active or selected_profile is None,
+    key="open_ivac_browser",
+):
     try:
-        st.session_state["ivac_browser_session"] = open_official_site()
+        st.session_state["ivac_browser_session"] = open_official_site(
+            url=ivac_url,
+            profile_directory=selected_profile,
+        )
         st.session_state.pop("browser_error", None)
         st.rerun()
-    except BrowserLaunchError as exc:
+    except (BrowserLaunchError, ValueError) as exc:
         st.session_state["browser_error"] = str(exc)
 if browser_col.button("Close Browser", disabled=not browser_active, key="close_ivac_browser"):
     try:
         browser_session.close()
     except Exception:
-        st.session_state["browser_error"] = "The browser did not close cleanly. Close its Chromium window manually."
+        st.session_state["browser_error"] = "The browser did not close cleanly. Close its Chrome window manually."
     st.session_state.pop("ivac_browser_session", None)
     st.rerun()
 if not primary_ready:
     browser_status_col.warning("Upload the primary Webfile PDF before opening the official website.")
 if st.session_state.get("browser_error"):
     st.error(st.session_state["browser_error"])
-st.caption("First use may require Chromium setup: `python -m playwright install chromium`.")
 st.info("Sign in manually. Enter credentials and email/mobile OTPs only on the official IVAC site. Do not share them with agents or intermediaries.")
 
 st.header("IVAC Portal Inspection Mode")
