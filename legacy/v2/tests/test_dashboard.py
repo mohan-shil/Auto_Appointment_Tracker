@@ -72,7 +72,7 @@ def test_manual_chromium_upload_guidance_is_displayed_with_a_saved_pdf_path():
     store.save(0, "fictional-primary.pdf", b"%PDF-1.7\n% synthetic\n%%EOF\n")
     app.run(timeout=15)
     assert not app.exception
-    instruction = next(item.value for item in app.info if "To upload this saved copy in Chromium" in item.value)
+    instruction = next(item.value for item in app.info if "To upload this saved copy in Chrome" in item.value)
     assert "complete the upload yourself" in instruction
     if sys.platform == "darwin":
         assert "Command + Shift + G" in instruction
