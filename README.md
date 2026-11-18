@@ -10,7 +10,7 @@ V3 is a local Node.js dashboard with a visible Playwright browser, private local
 - Mock login/dashboard, Webfile upload screen, date calendar, time-slot simulation, changing calendar, session expiry, navigation failure, unexpected popup, and payment-stage simulation.
 - Mock workflow controls, chronological date selection, attempt results, pause/resume/stop, bounded recovery handling, and payment stop.
 - Local desktop notifications on pause/error/payment where the platform supports them.
-- Sanitized, read-only inspection of the current visible page only when it is on the official IVAC HTTPS origin. Unknown wording is omitted; values, hidden fields, cookies, storage, network data, and CAPTCHA internals are not read.
+- Sanitized, read-only inspection of visible page labels and structure only when on the official IVAC HTTPS origin. Unknown wording is omitted; values, hidden fields, cookies, storage, network data, and all CAPTCHA-related elements or metadata are excluded from inspection.
 
 ## macOS install and run
 
