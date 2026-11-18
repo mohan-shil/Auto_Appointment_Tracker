@@ -1,0 +1,30 @@
+name: V3 mock foundation
+
+on:
+  push:
+    branches:
+      - "v3/**"
+    paths:
+      - "v3/**"
+      - ".github/workflows/v3-mock.yml"
+  pull_request:
+    paths:
+      - "v3/**"
+      - ".github/workflows/v3-mock.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  mock-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run isolated mock tests
+        working-directory: v3
+        run: npm test
