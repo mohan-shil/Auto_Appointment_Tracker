@@ -1,0 +1,36 @@
+{
+  "name": "auto-appointment-tracker-v3",
+  "version": "3.0.0",
+  "description": "Local-first IVAC applicant assistance with a mock Playwright workflow",
+  "type": "module",
+  "main": "src/server/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server/index.js",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:v2": "node scripts/run-v2-tests.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "express": "^5.3.0",
+    "multer": "^2.5.0",
+    "node-notifier": "^10.0.1",
+    "playwright": "^1.65.1"
+  },
+  "devDependencies": {
+    "vite": "6.4.6",
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "node-notifier": {
+      "uuid": "^11.1.1"
+    }
+  }
+}

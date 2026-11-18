@@ -1,5 +1,7 @@
 import sys
 
+from pathlib import Path
+
 from streamlit.testing.v1 import AppTest
 
 from modules.browser import IVAC_URL
@@ -7,7 +9,7 @@ from modules.document_store import LocalDocumentStore
 
 
 def test_dashboard_starts_with_v2_sections_and_primary_required():
-    app = AppTest.from_file("app.py").run(timeout=15)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py").run(timeout=15)
     assert not app.exception
     assert any("Auto Appointment Tracker" in item.value for item in app.title)
     headers = [item.value for item in app.header]
@@ -26,7 +28,7 @@ def test_dashboard_starts_with_v2_sections_and_primary_required():
 
 
 def test_four_fixed_slots_and_optional_secondary_add_remove_controls():
-    app = AppTest.from_file("app.py").run(timeout=15)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py").run(timeout=15)
     applicant_headers = [item.value for item in app.subheader]
     assert applicant_headers.count("Primary applicant") == 1
     for index in range(1, 4):
@@ -38,7 +40,7 @@ def test_four_fixed_slots_and_optional_secondary_add_remove_controls():
 
 
 def test_workflow_progress_state_persists_across_streamlit_reruns():
-    app = AppTest.from_file("app.py").run(timeout=15)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py").run(timeout=15)
     sign_in = next(item for item in app.checkbox if item.label == "Sign in manually")
     sign_in.set_value(True).run(timeout=15)
     assert not app.exception
@@ -47,7 +49,7 @@ def test_workflow_progress_state_persists_across_streamlit_reruns():
 
 
 def test_uploaded_document_metadata_persists_across_reruns_and_clear_all_removes_it():
-    app = AppTest.from_file("app.py").run(timeout=15)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py").run(timeout=15)
     store = app.session_state["document_store"]
     synthetic_pdf = b"%PDF-1.7\n% synthetic fictional Webfile\n%%EOF\n"
     saved = store.save(0, "fictional-primary.pdf", synthetic_pdf)
@@ -64,14 +66,14 @@ def test_uploaded_document_metadata_persists_across_reruns_and_clear_all_removes
     assert not app.session_state["document_store"].documents
 
 
-def test_manual_chromium_upload_guidance_is_displayed_with_a_saved_pdf_path():
-    app = AppTest.from_file("app.py").run(timeout=15)
+def test_manual_chrome_upload_guidance_is_displayed_with_a_saved_pdf_path():
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py").run(timeout=15)
     store = app.session_state["document_store"]
     store.save(0, "fictional-primary.pdf", b"%PDF-1.7\n% synthetic\n%%EOF\n")
     app.run(timeout=15)
     assert not app.exception
-    instruction = next(item.value for item in app.info if "To upload this saved copy in Chromium" in item.value)
-    assert "complete the upload yourself" in instruction
+    instruction = next(item.value for item in app.info if "To upload this saved copy in Chrome" in item.value)
+    assert "select the correct PDF yourself" in instruction
     if sys.platform == "darwin":
         assert "Command + Shift + G" in instruction
         assert any(button.label == "Reveal PDF in Finder" for button in app.button)
@@ -83,7 +85,7 @@ def test_manual_chromium_upload_guidance_is_displayed_with_a_saved_pdf_path():
 
 
 def test_browser_error_and_manual_boundaries_are_displayed_without_portal_access():
-    app = AppTest.from_file("app.py").run(timeout=15)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py").run(timeout=15)
     assert not app.exception
     assert any("OTP" in item.value and "manually" in item.value for item in app.info)
     assert any("No appointment date or centre availability is checked" in item.value for item in app.warning)

@@ -19,3 +19,16 @@ temp/
 **/__pycache__/
 *.pyc
 .DS_Store
+node_modules/
+dist/
+coverage/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+playwright/.auth/
+browser-profiles/
+browser-profile/
+session-data/
+local-data/
+logs/
