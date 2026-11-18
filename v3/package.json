@@ -1,0 +1,14 @@
+{
+  "name": "auto-appointment-tracker-v3",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-only V3 foundation and synthetic IVAC mock environment",
+  "scripts": {
+    "start:mock": "node mock-server/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
