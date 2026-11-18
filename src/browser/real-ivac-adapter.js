@@ -1,8 +1,8 @@
 import { IVAC_ORIGIN } from './session.js';
 
 const WORDS=new Set('ivac appointment application applicant applicants visa webfile passport login sign signup register account profile dashboard home public landing page otp email mobile phone password submit continue next back cancel close open upload file files choose select centre center location date calendar payment pay invoice confirm confirmation help faq notice important welcome required optional primary secondary name number reference details information document documents status search verify verification available unavailable total fee transaction receipt logout menu navigation contact support terms privacy english online booking official system'.split(' '));
-function safeText(s){if(typeof s!=='string'||/\\d|@|\\+/.test(s))return '[omitted]';const words=s.toLowerCase().match(/[a-z]+/g)||[];return words.length&&words.every(w=>WORDS.has(w))?s.trim().slice(0,100):'[omitted]';}
-const safeSegment=p=>!p?'':(WORDS.has(p.toLowerCase())&&!/\\d|@/.test(p)?p:'[redacted]');
+function safeText(s){if(typeof s!=='string'||/\d|@|\+/.test(s))return '[omitted]';const words=s.toLowerCase().match(/[a-z]+/g)||[];return words.length&&words.every(w=>WORDS.has(w))?s.trim().slice(0,100):'[omitted]';}
+const safeSegment=p=>!p?'':(WORDS.has(p.toLowerCase())&&!/\d|@/.test(p)?p:'[redacted]');
 export async function inspectCurrentPage(page){
   const parsed=new URL(page.url());if(parsed.origin!==IVAC_ORIGIN)throw new Error('Real inspection is limited to the official IVAC host.');
   const raw=await page.evaluate(()=>{
