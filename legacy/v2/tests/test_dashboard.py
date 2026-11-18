@@ -66,14 +66,14 @@ def test_uploaded_document_metadata_persists_across_reruns_and_clear_all_removes
     assert not app.session_state["document_store"].documents
 
 
-def test_manual_chromium_upload_guidance_is_displayed_with_a_saved_pdf_path():
+def test_manual_chrome_upload_guidance_is_displayed_with_a_saved_pdf_path():
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py").run(timeout=15)
     store = app.session_state["document_store"]
     store.save(0, "fictional-primary.pdf", b"%PDF-1.7\n% synthetic\n%%EOF\n")
     app.run(timeout=15)
     assert not app.exception
     instruction = next(item.value for item in app.info if "To upload this saved copy in Chrome" in item.value)
-    assert "complete the upload yourself" in instruction
+    assert "select the correct PDF yourself" in instruction
     if sys.platform == "darwin":
         assert "Command + Shift + G" in instruction
         assert any(button.label == "Reveal PDF in Finder" for button in app.button)
