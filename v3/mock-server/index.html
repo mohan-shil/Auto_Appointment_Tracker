@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>IVAC — Synthetic Mock Portal</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; }
+    body { max-width: 860px; margin: 2rem auto; padding: 0 1rem; color: #182230; background: #f5f7fa; }
+    header, section { background: white; border: 1px solid #d8dee8; border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }
+    .warning { border-left: 4px solid #d97706; padding: .75rem; background: #fff7ed; }
+    .status { font-weight: 650; }
+    button { margin: .25rem; padding: .6rem .9rem; border: 1px solid #64748b; border-radius: 8px; background: #fff; cursor: pointer; }
+    button:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    li { margin: .35rem 0; }
+    #log { white-space: pre-wrap; overflow-wrap: anywhere; background: #101827; color: #e5edf8; padding: 1rem; border-radius: 8px; min-height: 3rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>IVAC — Synthetic Mock Portal</h1>
+    <p class="warning"><strong>TEST ENVIRONMENT ONLY.</strong> This local page is fictional, is not operated by IVAC, and cannot create an appointment. Do not enter real personal information or upload real documents.</p>
+    <p>All controls below change local demonstration state only. No network requests are sent except loading this local page.</p>
+  </header>
+
+  <section aria-labelledby="session-heading">
+    <h2 id="session-heading">1. Session simulation</h2>
+    <p>Authentication is intentionally represented as a manual handoff. No password, OTP, or CAPTCHA fields exist in this mock.</p>
+    <button id="mock-login">Simulate user-confirmed login</button>
+    <button id="mock-expire">Simulate session expiry</button>
+    <p class="status" id="session-state" aria-live="polite">Waiting for manual user confirmation</p>
+  </section>
+
+  <section aria-labelledby="appointment-heading">
+    <h2 id="appointment-heading">2. Appointment calendar simulation</h2>
+    <p>Use synthetic dates to exercise sorting and empty/available states.</p>
+    <button id="no-dates">No dates available</button>
+    <button id="available-dates">Show synthetic available dates</button>
+    <button id="refresh-dates">Simulate calendar update</button>
+    <ul id="date-list"><li>No calendar data loaded</li></ul>
+  </section>
+
+  <section aria-labelledby="recovery-heading">
+    <h2 id="recovery-heading">3. Recovery and safety scenarios</h2>
+    <button id="unexpected-error">Simulate unexpected portal error</button>
+    <button id="payment-page">Simulate payment page reached</button>
+    <p class="status" id="automation-state" aria-live="polite">Automation state: IDLE</p>
+  </section>
+
+  <section aria-labelledby="log-heading">
+    <h2 id="log-heading">Event log</h2>
+    <div id="log" role="status" aria-live="polite">Mock ready. No live IVAC connection.</div>
+  </section>
+
+  <script type="module">
+    const sessionState = document.querySelector("#session-state");
+    const automationState = document.querySelector("#automation-state");
+    const dateList = document.querySelector("#date-list");
+    const log = document.querySelector("#log");
+    let authenticated = false;
+    let stopped = false;
+    let dates = [];
+
+    function record(message) {
+      log.textContent = `${new Date().toLocaleTimeString()} — ${message}\n` + log.textContent;
+    }
+    function setAutomationState(value) {
+      automationState.textContent = `Automation state: ${value}`;
+    }
+    function renderDates() {
+      dateList.replaceChildren();
+      if (!dates.length) {
+        const item = document.createElement("li");
+        item.textContent = "No available dates";
+        dateList.append(item);
+        return;
+      }
+      for (const date of [...dates].sort()) {
+        const item = document.createElement("li");
+        item.textContent = date;
+        dateList.append(item);
+      }
+    }
+
+    document.querySelector("#mock-login").addEventListener("click", () => {
+      authenticated = true;
+      stopped = false;
+      sessionState.textContent = "Authenticated (synthetic confirmation only)";
+      setAutomationState("READY");
+      record("User-confirmed mock login. No credentials or OTP were entered.");
+    });
+    document.querySelector("#mock-expire").addEventListener("click", () => {
+      authenticated = false;
+      stopped = true;
+      sessionState.textContent = "Session expired — user must sign in manually";
+      setAutomationState("PAUSED");
+      record("Session expiry simulated. Workflow paused pending manual user action.");
+    });
+    document.querySelector("#no-dates").addEventListener("click", () => {
+      dates = [];
+      renderDates();
+      record("Calendar returned no available dates.");
+    });
+    document.querySelector("#available-dates").addEventListener("click", () => {
+      dates = ["2027-01-22", "2027-01-19", "2027-01-21"];
+      renderDates();
+      record("Synthetic dates loaded and displayed in chronological order.");
+    });
+    document.querySelector("#refresh-dates").addEventListener("click", () => {
+      if (!authenticated) {
+        record("Calendar refresh refused: mock session is not authenticated.");
+        return;
+      }
+      dates = dates.length ? ["2027-01-23", ...dates] : ["2027-01-20"];
+      renderDates();
+      record("One synthetic calendar update was applied. No polling is running.");
+    });
+    document.querySelector("#unexpected-error").addEventListener("click", () => {
+      stopped = true;
+      setAutomationState("PAUSED — MANUAL REVIEW REQUIRED");
+      record("Unexpected error simulated. No automatic retry was attempted.");
+    });
+    document.querySelector("#payment-page").addEventListener("click", () => {
+      stopped = true;
+      setAutomationState("STOPPED — PAYMENT PAGE DETECTED");
+      record("Payment page detected in mock. Workflow stopped immediately; no payment control was clicked.");
+    });
+  </script>
+</body>
+</html>
